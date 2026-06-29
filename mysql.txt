@@ -1,0 +1,153 @@
+-- ============================================================
+-- Application Access Control Schema
+-- Compatible with MySQL 5.5
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. applications
+-- ------------------------------------------------------------
+CREATE TABLE applications (
+    id          INT             NOT NULL AUTO_INCREMENT,
+    name        VARCHAR(100)    NOT NULL,
+    slug        VARCHAR(100)    NOT NULL,
+    description VARCHAR(255)    NULL,
+    url         VARCHAR(255)    NULL,
+    is_active   TINYINT(1)      NOT NULL DEFAULT 1,
+    created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_applications PRIMARY KEY (id),
+    CONSTRAINT uq_applications_slug UNIQUE (slug)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+-- ------------------------------------------------------------
+-- 2. _groups
+-- ------------------------------------------------------------
+CREATE TABLE _groups (
+    id          INT             NOT NULL AUTO_INCREMENT,
+    name        VARCHAR(100)    NOT NULL,
+    description VARCHAR(255)    NULL,
+    is_active   TINYINT(1)      NOT NULL DEFAULT 1,
+    created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_groups PRIMARY KEY (id),
+    CONSTRAINT uq_groups_name UNIQUE (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+-- ------------------------------------------------------------
+-- 3. users
+-- ------------------------------------------------------------
+CREATE TABLE users (
+    id            INT             NOT NULL AUTO_INCREMENT,
+    username      VARCHAR(50)     NOT NULL,
+    email         VARCHAR(150)    NOT NULL,
+    password_hash VARCHAR(255)    NOT NULL,
+    is_active     TINYINT(1)      NOT NULL DEFAULT 1,
+    created_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_users PRIMARY KEY (id),
+    CONSTRAINT uq_users_username UNIQUE (username),
+    CONSTRAINT uq_users_email UNIQUE (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+-- ------------------------------------------------------------
+-- 4. user_groups  (user <-> group junction)
+-- ------------------------------------------------------------
+CREATE TABLE user_groups (
+    user_id     INT         NOT NULL,
+    group_id    INT         NOT NULL,
+    assigned_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_user_groups PRIMARY KEY (user_id, group_id),
+    CONSTRAINT fk_ug_user  FOREIGN KEY (user_id)  REFERENCES users(id)  ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_ug_group FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+-- ------------------------------------------------------------
+-- 5. group_applications  (group <-> application junction)
+-- ------------------------------------------------------------
+CREATE TABLE group_applications (
+    group_id       INT         NOT NULL,
+    application_id INT         NOT NULL,
+    granted_at     DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_group_applications PRIMARY KEY (group_id, application_id),
+    CONSTRAINT fk_ga_group FOREIGN KEY (group_id)       REFERENCES groups(id)       ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_ga_app   FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+-- ============================================================
+-- Sample Data
+-- ============================================================
+
+INSERT INTO applications (name, slug, description, url) VALUES
+('HR System',       'hr-system',       'Human Resources portal',        'https://hrsys.nccc.com.ph'),
+('Warehouse App',   'warehouse-app',   'Inventory management PWA',      'https://warehouse.nccc.com.ph'),
+('Online Clearance','online-clearance','Employee clearance system',     'https://ocs.nccc.com.ph'),
+('MailDesk',        'maildesk',        'Internal email sending tool',   'https://maildesk.nccc.com.ph');
+
+INSERT INTO groups (name, description) VALUES
+('IT Admin',        'Full access to all systems'),
+('HR Staff',        'Access to HR-related applications'),
+('Warehouse Staff', 'Access to inventory and warehouse tools');
+
+INSERT INTO users (username, email, password_hash) VALUES
+('admin',    'admin@nccc.com.ph',    'hashed_password_here'),
+('jdelacruz','jdelacruz@nccc.com.ph','hashed_password_here'),
+('mreyes',   'mreyes@nccc.com.ph',   'hashed_password_here');
+
+INSERT INTO user_groups (user_id, group_id) VALUES
+(1, 1), -- admin       -> IT Admin
+(2, 2), -- jdelacruz   -> HR Staff
+(3, 3); -- mreyes      -> Warehouse Staff
+
+INSERT INTO group_applications (group_id, application_id) VALUES
+(1, 1), (1, 2), (1, 3), (1, 4), -- IT Admin gets all apps
+(2, 1), (2, 3),                  -- HR Staff gets HR System + Online Clearance
+(3, 2);                          -- Warehouse Staff gets Warehouse App only
+
+-- ============================================================
+-- Useful Query: get all apps accessible by a given user
+-- ============================================================
+-- Replace ? with the target user_id
+--
+-- SELECT DISTINCT a.id, a.name, a.url
+-- FROM applications a
+-- JOIN group_applications ga ON ga.application_id = a.id
+-- JOIN user_groups ug ON ug.group_id = ga.group_id
+-- WHERE ug.user_id = ?
+--   AND a.is_active = 1;
+
+-- payment_headers
+'CREATE TABLE `se_payment_headers` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `company_number` varchar(20) NOT NULL,
+  `company_name` varchar(255) NOT NULL,
+  `vendor_number` varchar(20) NOT NULL,
+  `vendor_name` varchar(255) NOT NULL,
+  `email_address` varchar(255) DEFAULT NULL,
+  `check_number` varchar(50) NOT NULL,
+  `total_amount` decimal(18,2) NOT NULL DEFAULT ''0.00'',
+  `bank_account` int DEFAULT NULL,
+  `release_date` date DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `check_number` (`check_number`),
+  KEY `idx_company_number` (`company_number`),
+  KEY `idx_vendor_number` (`vendor_number`),
+  KEY `idx_check_number` (`check_number`)
+) ENGINE=InnoDB AUTO_INCREMENT=29 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci'
+
+-- payment_details
+'CREATE TABLE `se_payment_details` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `invoice_date` date NOT NULL, // AIDTIV
+  `invoice_number` varchar(50) NOT NULL, // AIINV
+  `check_number` varchar(50) NOT NULL, //AICHQ
+  `store_name` varchar(255) NOT NULL, //STRNAM
+  `total_net` decimal(18,2) NOT NULL DEFAULT ''0.00'', //AITONT
+  `company_number` varchar(20) NOT NULL, // AICMP
+  `vendor_number` varchar(20) NOT NULL, //AINUM
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_invoice_number` (`invoice_number`),
+  KEY `idx_check_number` (`check_number`),
+  KEY `idx_company_number` (`company_number`),
+  KEY `idx_vendor_number` (`vendor_number`),
+  CONSTRAINT `fk_payment_details_header` FOREIGN KEY (`check_number`) REFERENCES `se_payment_headers` (`check_number`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci'
