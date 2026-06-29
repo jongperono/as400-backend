@@ -17,7 +17,7 @@ async function postReleaseChecksByDate(date) {
   if (!checks.length) {
     return { success: true, headersProcessed: 0, detailsProcessed: 0 };
   }
-
+  console.log(checks, 'checks')
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();

@@ -141,8 +141,8 @@ async function insertPaymentHeaders(rows, releasedDate, db = pool) {
 
   // Return the list of upserted check keys so we can fetch details per check
   return rows.map((row) => ({
-    check_number:   String(row.AICHQ).trim(),
-    vendor_number:  String(row.AINUM).trim(),
+    check_number: String(row.AICHQ).trim(),
+    vendor_number: String(row.AINUM).trim(),
     company_number: String(row.AICMP).trim(),
   }));
 }
@@ -152,6 +152,7 @@ async function insertPaymentHeaders(rows, releasedDate, db = pool) {
  * Uses the shared singleton ODBC connection — callers must NOT run these in parallel.
  */
 async function getPaymentDetailsFromAS400(checkNumber, vendorNumber, companyNumber) {
+  console.log(checkNumber, vendorNumber, companyNumber, 'checkNumber vendorNumber companyNumber');
   const sql = `
     SELECT
       RTRIM(CHAR(A.AIDTIV))  AS AIDTIV,
@@ -176,9 +177,9 @@ async function getPaymentDetailsFromAS400(checkNumber, vendorNumber, companyNumb
       ON A.AINUM = E.AINUM
       AND A.AIINV = E.AIINV
     WHERE
-      A.AICHQ  = RTRIM(LTRIM(?))
-      AND A.AINUM = RTRIM(LTRIM(?))
-      AND A.AICMP = RTRIM(LTRIM(?))
+      A.AICHQ  = TRIM(CAST(? AS CHAR(20)))
+      AND A.AINUM = TRIM(CAST(? AS CHAR(20)))
+      AND A.AICMP = TRIM(CAST(? AS CHAR(20)))
   `;
 
   // Reuse the shared singleton — do NOT call in parallel
@@ -188,6 +189,7 @@ async function getPaymentDetailsFromAS400(checkNumber, vendorNumber, companyNumb
     String(vendorNumber).trim(),
     String(companyNumber).trim(),
   ]);
+  console.log(result, 'result');
   return result;
 }
 
@@ -216,12 +218,12 @@ async function bulkInsertPaymentDetails(detailRows, db = pool) {
 
   const values = detailRows.map((row) => [
     formatAS400Date(row.AIDTIV),
-    row.AIINV   ? String(row.AIINV).trim()   : null,
-    row.AICHQ   ? String(row.AICHQ).trim()   : null,
-    row.STRNAM  ? String(row.STRNAM).trim()  : null,
-    row.AITONT  ?? 0,
-    row.AICMP   ? String(row.AICMP).trim()   : null,
-    row.AINUM   ? String(row.AINUM).trim()   : null,
+    row.AIINV ? String(row.AIINV).trim() : null,
+    row.AICHQ ? String(row.AICHQ).trim() : null,
+    row.STRNAM ? String(row.STRNAM).trim() : null,
+    row.AITONT ?? 0,
+    row.AICMP ? String(row.AICMP).trim() : null,
+    row.AINUM ? String(row.AINUM).trim() : null,
   ]);
 
   const [result] = await db.query(sql, [values]);
