@@ -55,7 +55,17 @@ async function postReleaseChecksByDate(date) {
   }
 }
 
+async function getPaymentHeaders(params) {
+  return await reportRepo.getPaymentHeaders(params);
+}
+
+async function getPaymentDetails(params) {
+  return await reportRepo.getPaymentDetails(params);
+}
+
 module.exports = {
   getReleasedChecksByDate,
-  postReleaseChecksByDate
+  postReleaseChecksByDate,
+  getPaymentHeaders,
+  getPaymentDetails,
 };

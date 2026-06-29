@@ -47,7 +47,39 @@ async function postReleaseChecks(req, res) {
   }
 }
 
+async function getPaymentHeaders(req, res) {
+  try {
+    const { search = "", page = 1, limit = 10 } = req.query;
+    const data = await reportService.getPaymentHeaders({
+      search,
+      page: parseInt(page),
+      limit: parseInt(limit),
+    });
+    res.json(data);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+}
+
+async function getPaymentDetails(req, res) {
+  try {
+    const { search = "", page = 1, limit = 10 } = req.query;
+    const data = await reportService.getPaymentDetails({
+      search,
+      page: parseInt(page),
+      limit: parseInt(limit),
+    });
+    res.json(data);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+}
+
 module.exports = {
   getReleasedChecks,
-  postReleaseChecks
+  postReleaseChecks,
+  getPaymentHeaders,
+  getPaymentDetails,
 };

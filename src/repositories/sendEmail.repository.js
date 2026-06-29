@@ -230,9 +230,57 @@ async function bulkInsertPaymentDetails(detailRows, db = pool) {
   console.log(`bulkInsertPaymentDetails: ${result.affectedRows} rows inserted`);
 }
 
+async function getPaymentHeaders({ search = "", page = 1, limit = 10 }) {
+  const offset = (page - 1) * limit;
+  let countSql = `SELECT COUNT(*) AS total FROM se_payment_headers`;
+  let dataSql = `SELECT * FROM se_payment_headers`;
+  const params = [];
+
+  if (search) {
+    const searchPattern = `%${search}%`;
+    const filter = ` WHERE check_number LIKE ? OR vendor_number LIKE ? OR vendor_name LIKE ? OR company_number LIKE ? OR company_name LIKE ?`;
+    countSql += filter;
+    dataSql += filter;
+    params.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
+  }
+
+  dataSql += ` ORDER BY release_date DESC, id DESC LIMIT ? OFFSET ?`;
+  const dataParams = [...params, parseInt(limit), parseInt(offset)];
+
+  const [[{ total }]] = await pool.query(countSql, params);
+  const [rows] = await pool.query(dataSql, dataParams);
+
+  return { rows, total };
+}
+
+async function getPaymentDetails({ search = "", page = 1, limit = 10 }) {
+  const offset = (page - 1) * limit;
+  let countSql = `SELECT COUNT(*) AS total FROM se_payment_details`;
+  let dataSql = `SELECT * FROM se_payment_details`;
+  const params = [];
+
+  if (search) {
+    const searchPattern = `%${search}%`;
+    const filter = ` WHERE check_number LIKE ? OR invoice_number LIKE ? OR store_name LIKE ? OR company_number LIKE ? OR vendor_number LIKE ?`;
+    countSql += filter;
+    dataSql += filter;
+    params.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
+  }
+
+  dataSql += ` ORDER BY id DESC LIMIT ? OFFSET ?`;
+  const dataParams = [...params, parseInt(limit), parseInt(offset)];
+
+  const [[{ total }]] = await pool.query(countSql, params);
+  const [rows] = await pool.query(dataSql, dataParams);
+
+  return { rows, total };
+}
+
 module.exports = {
   getReleasedChecks,
   insertPaymentHeaders,
   getPaymentDetailsFromAS400,
   bulkInsertPaymentDetails,
+  getPaymentHeaders,
+  getPaymentDetails,
 };
