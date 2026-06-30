@@ -143,6 +143,8 @@ INSERT INTO group_applications (group_id, application_id) VALUES
   `total_net` decimal(18,2) NOT NULL DEFAULT ''0.00'', //AITONT
   `company_number` varchar(20) NOT NULL, // AICMP
   `vendor_number` varchar(20) NOT NULL, //AINUM
+  `rebate_type` varchar(50) DEFAULT NULL  //REBATP
+  `po_number` varchar(50) DEFAULT NULL //AIPO
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_invoice_number` (`invoice_number`),

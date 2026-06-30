@@ -11,8 +11,9 @@ function formatToMySQLDate(date) {
  * AS400 SQL may return dates as:
  *   - JS Date object  → use toISOString
  *   - '2026-06-25'    → already ISO, pass through
- *   - '20260625'      → packed YYYYMMDD
- *   - 1260625         → numeric YYYYMMDD (century dropped) — treat as 2000s
+ *   - '20260625'      → packed YYYYMMDD (8 digits)
+ *   - '260625'        → packed YYMMDD (6 digits) — AIDTIV via RTRIM(CHAR(...))
+ *   - 1260625         → numeric cYYMMDD (7 digits, IBM legacy)
  */
 function formatAS400Date(value) {
   if (!value) return null;
@@ -29,10 +30,16 @@ function formatAS400Date(value) {
   if (/^\d{8}$/.test(s)) {
     return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
   }
-  // 7-digit cYYMMDD (IBM legacy)
+  // 7-digit cYYMMDD (IBM legacy century prefix)
   if (/^\d{7}$/.test(s)) {
     const century = s[0] === '1' ? '20' : '19';
     return `${century}${s.slice(1, 3)}-${s.slice(3, 5)}-${s.slice(5, 7)}`;
+  }
+  // 6-digit YYMMDD — from RTRIM(CHAR(AIDTIV))
+  if (/^\d{6}$/.test(s)) {
+    const yy = parseInt(s.slice(0, 2), 10);
+    const century = yy <= 99 ? (yy >= 50 ? '19' : '20') : '20';
+    return `${century}${s.slice(0, 2)}-${s.slice(2, 4)}-${s.slice(4, 6)}`;
   }
   // Fallback — return null to avoid MySQL rejecting a bad date
   console.warn('formatAS400Date: unrecognised date value:', value);
@@ -211,7 +218,9 @@ async function bulkInsertPaymentDetails(detailRows, db = pool) {
       store_name,
       total_net,
       company_number,
-      vendor_number
+      vendor_number,
+      rebate_type,
+      po_number
     )
     VALUES ?
   `;
@@ -224,6 +233,8 @@ async function bulkInsertPaymentDetails(detailRows, db = pool) {
     row.AITONT ?? 0,
     row.AICMP ? String(row.AICMP).trim() : null,
     row.AINUM ? String(row.AINUM).trim() : null,
+    row.REBATP ? String(row.REBATP).trim() : null,
+    row.AIPO ? String(row.AIPO).trim() : null,
   ]);
 
   const [result] = await db.query(sql, [values]);
