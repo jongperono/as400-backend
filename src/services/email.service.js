@@ -59,6 +59,13 @@ function buildEmailHtml({ vendorName, vendorNumber, checks }) {
         <td style="padding:8px 12px;font-size:12px;color:#475569;border-bottom:1px solid #f1f5f9;">${d.invoice_number || "—"}</td>
         <td style="padding:8px 12px;font-size:12px;color:#475569;border-bottom:1px solid #f1f5f9;">${d.store_name || "—"}</td>
         <td style="padding:8px 12px;font-size:12px;color:#475569;border-bottom:1px solid #f1f5f9;">${formatDate(d.invoice_date)}</td>
+        <td style="padding:8px 12px;font-size:12px;color:#475569;border-bottom:1px solid #f1f5f9;">${d.po_number || "—"}</td>
+        <td style="padding:8px 12px;font-size:12px;border-bottom:1px solid #f1f5f9;">
+          ${d.rebate_type
+                ? `<span style="display:inline-block;padding:2px 8px;border-radius:4px;background:#f3e8ff;color:#7c3aed;font-size:11px;font-weight:600;">${d.rebate_type}</span>`
+                : `<span style="color:#cbd5e1;">—</span>`
+            }
+        </td>
         <td style="padding:8px 12px;font-size:12px;color:#1e293b;font-weight:600;text-align:right;border-bottom:1px solid #f1f5f9;">${formatCurrency(d.total_net)}</td>
       </tr>`).join("");
 
@@ -78,6 +85,8 @@ function buildEmailHtml({ vendorName, vendorNumber, checks }) {
             <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;text-align:left;">Invoice #</th>
             <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;text-align:left;">Store</th>
             <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;text-align:left;">Invoice Date</th>
+            <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;text-align:left;">PO Number</th>
+            <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;text-align:left;">Rebate Type</th>
             <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;text-align:right;">Net Amount</th>
           </tr>
         </thead>
