@@ -1,4 +1,5 @@
 const reportService = require("../services/sendEmail.service");
+const emailService = require("../services/email.service");
 
 async function getReleasedChecks(req, res) {
   console.log('getReleasedChecks')
@@ -77,9 +78,24 @@ async function getPaymentDetails(req, res) {
   }
 }
 
+async function sendNotifications(req, res) {
+  try {
+    const { date } = req.body;
+    if (!date) {
+      return res.status(400).json({ error: "date is required (YYYY-MM-DD)" });
+    }
+    const result = await emailService.sendVendorPaymentEmails(date);
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+}
+
 module.exports = {
   getReleasedChecks,
   postReleaseChecks,
   getPaymentHeaders,
   getPaymentDetails,
+  sendNotifications,
 };
