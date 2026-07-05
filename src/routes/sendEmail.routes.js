@@ -7,5 +7,6 @@ router.post("/released-checks", sendEmailController.postReleaseChecks);
 router.get("/payment-headers", sendEmailController.getPaymentHeaders);
 router.get("/payment-details", sendEmailController.getPaymentDetails);
 router.post("/send-notifications", sendEmailController.sendNotifications);
+router.post("/resend/:checkNumber", sendEmailController.resendEmail);
 
 module.exports = router;
