@@ -1,8 +1,11 @@
 const express = require("express");
 const router = express.Router();
+const { authenticateToken } = require("../middleware/auth.middleware");
 
 const userController = require("../controllers/user.controller");
-router.get("/", userController.getUsers);
+
+// Protected route - requires authentication
+router.get("/", authenticateToken, userController.getUsers);
 // router.get("/:id", userController.getUser);
 // router.post("/", userController.createUser);
 
