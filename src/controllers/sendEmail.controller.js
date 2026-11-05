@@ -94,11 +94,14 @@ async function sendNotifications(req, res) {
 
 async function resendEmail(req, res) {
   try {
-    const { checkNumber } = req.params;
+    const { checkNumber, vendorNumber } = req.params;
     if (!checkNumber) {
       return res.status(400).json({ error: "checkNumber is required" });
     }
-    const result = await emailService.resendCheckEmail(checkNumber);
+    if (!vendorNumber) {
+      return res.status(400).json({ error: "vendorNumber is required" });
+    }
+    const result = await emailService.resendCheckEmail(checkNumber, vendorNumber);
     res.json(result);
   } catch (err) {
     console.error(err);

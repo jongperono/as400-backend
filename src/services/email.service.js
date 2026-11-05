@@ -148,11 +148,25 @@ function buildEmailHtml({ vendorName, vendorNumber, checks }) {
  * @returns {{ total, sent, skipped, failed, logs }}
  */
 async function sendVendorPaymentEmails(date) {
-  // await ensureEmailColumns();
+  // Check if email tracking columns exist (backward compatibility)
+  let hasEmailColumns = true;
+  try {
+    await pool.query(`SELECT email_sent FROM se_payment_headers LIMIT 1`);
+  } catch (err) {
+    hasEmailColumns = false;
+    console.warn('Warning: email_sent columns not found. Run migration_fix_composite_key.sql to add email tracking.');
+  }
 
-  // 1. Fetch pending headers for the given date
+  // 1. Fetch pending headers for the given date (not yet sent)
+  // Now using composite key (check_number, vendor_number) for proper grouping
+  const whereClause = hasEmailColumns 
+    ? `WHERE release_date = ? AND email_sent = 0`
+    : `WHERE release_date = ?`;
+    
   const [headers] = await pool.query(
-    `SELECT * FROM se_payment_headers WHERE release_date = ? AND status = 'pending' ORDER BY vendor_number`,
+    `SELECT * FROM se_payment_headers 
+     ${whereClause}
+     ORDER BY vendor_number, check_number`,
     [date]
   );
 
@@ -160,12 +174,17 @@ async function sendVendorPaymentEmails(date) {
     return { total: 0, sent: 0, skipped: 0, failed: 0, logs: [`No pending headers found for ${date}`] };
   }
 
-  // 2. Group headers by vendor_number
+  // 2. Group headers by vendor_number (one email per vendor with all their checks)
   const vendorMap = new Map();
   for (const h of headers) {
     const key = `${h.vendor_number}`;
     if (!vendorMap.has(key)) {
-      vendorMap.set(key, { vendorNumber: h.vendor_number, vendorName: h.vendor_name, email: h.email_address, checks: [] });
+      vendorMap.set(key, { 
+        vendorNumber: h.vendor_number, 
+        vendorName: h.vendor_name, 
+        email: h.email_address, 
+        checks: [] 
+      });
     }
     vendorMap.get(key).checks.push(h);
   }
@@ -173,7 +192,6 @@ async function sendVendorPaymentEmails(date) {
   const logs = [];
   let sent = 0, skipped = 0, failed = 0;
   const transporter = createTransporter();
-  const checkNumbersToUpdate = [];
 
   // 3. Process each vendor sequentially
   for (const [, vendor] of vendorMap) {
@@ -182,17 +200,26 @@ async function sendVendorPaymentEmails(date) {
     if (!email) {
       skipped++;
       logs.push(`[SKIP] Vendor ${vendorName} (${vendorNumber}) — no email address`);
-      await pool.query(
-        `UPDATE se_payment_headers SET status='skipped', error_log='No email address' WHERE vendor_number=? AND release_date=?`,
-        [vendorNumber, date]
-      );
+      // Mark all checks for this vendor as sent with note (if column exists)
+      if (hasEmailColumns) {
+        for (const check of checks) {
+          await pool.query(
+            `UPDATE se_payment_headers 
+             SET email_sent = 1, email_sent_at = NOW() 
+             WHERE check_number = ? AND vendor_number = ?`,
+            [check.check_number, check.vendor_number]
+          );
+        }
+      }
       continue;
     }
 
     // 4. Fetch detail lines for each check in this vendor batch
+    // Using composite key (check_number, vendor_number, company_number)
     for (const check of checks) {
       const [details] = await pool.query(
-        `SELECT * FROM se_payment_details WHERE check_number=? AND vendor_number=? AND company_number=?`,
+        `SELECT * FROM se_payment_details 
+         WHERE check_number = ? AND vendor_number = ? AND company_number = ?`,
         [check.check_number, check.vendor_number, check.company_number]
       );
       check.details = details;
@@ -209,21 +236,25 @@ async function sendVendorPaymentEmails(date) {
       });
 
       sent++;
-      logs.push(`[SENT] Vendor ${vendorName} (${vendorNumber}) → ${email} [msgId: ${info.messageId}]`);
+      logs.push(`[SENT] Vendor ${vendorName} (${vendorNumber}) → ${email} — ${checks.length} check(s) [msgId: ${info.messageId}]`);
 
-      await pool.query(
-        `UPDATE se_payment_headers SET status='sent', emailed_at=NOW(), error_log=NULL WHERE vendor_number=? AND release_date=?`,
-        [vendorNumber, date]
-      );
+      // Mark all checks for this vendor as sent (if column exists)
+      if (hasEmailColumns) {
+        for (const check of checks) {
+          await pool.query(
+            `UPDATE se_payment_headers 
+             SET email_sent = 1, email_sent_at = NOW() 
+             WHERE check_number = ? AND vendor_number = ?`,
+            [check.check_number, check.vendor_number]
+          );
+        }
+      }
     } catch (err) {
       failed++;
       const errMsg = err.message || String(err);
       logs.push(`[FAIL] Vendor ${vendorName} (${vendorNumber}) → ${email} — ${errMsg}`);
 
-      await pool.query(
-        `UPDATE se_payment_headers SET status='failed', error_log=? WHERE vendor_number=? AND release_date=?`,
-        [errMsg.slice(0, 1000), vendorNumber, date]
-      );
+      // Note: We're not marking as sent if email fails, so it can be retried
     }
   }
 
@@ -233,59 +264,65 @@ async function sendVendorPaymentEmails(date) {
 }
 
 /**
- * Resends the payment email for a single check number.
- * Fetches the header row regardless of current status, rebuilds the HTML,
- * and sends to the vendor's email address.
- * Updates status to 'sent' on success or 'failed' on error.
+ * Resends the payment email for a SPECIFIC check/vendor combination.
+ * Fetches the header row for the exact check_number + vendor_number pair,
+ * rebuilds the HTML, and sends to that vendor's email address.
+ * Updates email_sent flag on success (if column exists).
  *
- * @param {string} checkNumber
+ * @param {string} checkNumber - The check number
+ * @param {string} vendorNumber - The vendor number (ensures we send to specific vendor only)
  * @returns {{ ok: boolean, message: string }}
  */
-async function resendCheckEmail(checkNumber) {
-  const [rows] = await pool.query(
-    `SELECT h.*, d.*
-         FROM se_payment_headers h
-         LEFT JOIN se_payment_details d
-           ON d.check_number = h.check_number
-          AND d.vendor_number = h.vendor_number
-          AND d.company_number = h.company_number
-         WHERE h.check_number = ?`,
-    [checkNumber]
+async function resendCheckEmail(checkNumber, vendorNumber) {
+  // Check if email tracking columns exist (backward compatibility)
+  let hasEmailColumns = true;
+  try {
+    await pool.query(`SELECT email_sent FROM se_payment_headers LIMIT 1`);
+  } catch (err) {
+    hasEmailColumns = false;
+  }
+
+  // Fetch the SPECIFIC header for this check_number + vendor_number combination
+  const [headers] = await pool.query(
+    `SELECT * FROM se_payment_headers 
+     WHERE check_number = ? AND vendor_number = ?`,
+    [checkNumber, vendorNumber]
   );
 
-  if (!rows.length) {
-    throw new Error(`Check number ${checkNumber} not found`);
+  if (!headers.length) {
+    throw new Error(`Check number ${checkNumber} for vendor ${vendorNumber} not found`);
   }
 
-  // Reconstruct the header + details structure expected by buildEmailHtml
-  const header = rows[0];
-  const { vendor_number, vendor_name, email_address, company_number, release_date } = header;
+  const header = headers[0];
+  const { vendor_name, email_address, company_number } = header;
 
   if (!email_address) {
-    await pool.query(
-      `UPDATE se_payment_headers SET status='skipped', error_log='No email address' WHERE check_number=?`,
-      [checkNumber]
-    );
-    throw new Error(`No email address for vendor ${vendor_name}`);
+    if (hasEmailColumns) {
+      await pool.query(
+        `UPDATE se_payment_headers 
+         SET email_sent = 1, email_sent_at = NOW() 
+         WHERE check_number = ? AND vendor_number = ?`,
+        [checkNumber, vendorNumber]
+      );
+    }
+    throw new Error(`No email address for vendor ${vendor_name} (${vendorNumber})`);
   }
+
+  // Fetch details for this specific check/vendor/company combination
+  const [details] = await pool.query(
+    `SELECT * FROM se_payment_details 
+     WHERE check_number = ? AND vendor_number = ? AND company_number = ?`,
+    [checkNumber, vendorNumber, company_number]
+  );
 
   const checkObj = {
     ...header,
-    details: rows.map((r) => ({
-      invoice_number: r.invoice_number,
-      invoice_date: r.invoice_date,
-      po_number: r.po_number,
-      total_net: r.total_net,
-      store_name: r.store_name,
-      rebate_type: r.rebate_type,
-      company_number: r.company_number,
-      vendor_number: r.vendor_number,
-    })).filter((d) => d.invoice_number), // exclude null detail rows
+    details: details,
   };
 
   const html = buildEmailHtml({
     vendorName: vendor_name,
-    vendorNumber: vendor_number,
+    vendorNumber: vendorNumber,
     checks: [checkObj],
   });
 
@@ -299,19 +336,22 @@ async function resendCheckEmail(checkNumber) {
       html,
     });
 
-    await pool.query(
-      `UPDATE se_payment_headers SET status='sent', emailed_at=NOW(), error_log=NULL WHERE check_number=?`,
-      [checkNumber]
-    );
+    if (hasEmailColumns) {
+      await pool.query(
+        `UPDATE se_payment_headers 
+         SET email_sent = 1, email_sent_at = NOW() 
+         WHERE check_number = ? AND vendor_number = ?`,
+        [checkNumber, vendorNumber]
+      );
+    }
 
-    return { ok: true, message: `Email sent to ${email_address} [msgId: ${info.messageId}]` };
+    return { 
+      ok: true, 
+      message: `Email sent to ${vendor_name} (${vendorNumber}) at ${email_address} [msgId: ${info.messageId}]`
+    };
   } catch (err) {
     const errMsg = err.message || String(err);
-    await pool.query(
-      `UPDATE se_payment_headers SET status='failed', error_log=? WHERE check_number=?`,
-      [errMsg.slice(0, 1000), checkNumber]
-    );
-    throw new Error(`Failed to send email: ${errMsg}`);
+    throw new Error(`Failed to send email to ${vendor_name}: ${errMsg}`);
   }
 }
 

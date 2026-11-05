@@ -113,6 +113,7 @@ INSERT INTO group_applications (group_id, application_id) VALUES
 --   AND a.is_active = 1;
 
 -- payment_headers
+-- UPDATED SCHEMA: Composite key (check_number, vendor_number) to support same check for different vendors
 'CREATE TABLE `se_payment_headers` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `company_number` varchar(20) NOT NULL,
@@ -124,34 +125,37 @@ INSERT INTO group_applications (group_id, application_id) VALUES
   `total_amount` decimal(18,2) NOT NULL DEFAULT ''0.00'',
   `bank_account` int DEFAULT NULL,
   `release_date` date DEFAULT NULL,
+  `email_sent` TINYINT(1) NOT NULL DEFAULT 0,
+  `email_sent_at` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `check_number` (`check_number`),
+  UNIQUE KEY `uq_check_vendor` (`check_number`, `vendor_number`),
   KEY `idx_company_number` (`company_number`),
   KEY `idx_vendor_number` (`vendor_number`),
-  KEY `idx_check_number` (`check_number`)
+  KEY `idx_check_number` (`check_number`),
+  KEY `idx_email_sent` (`email_sent`)
 ) ENGINE=InnoDB AUTO_INCREMENT=29 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci'
 
 -- payment_details
+-- UPDATED SCHEMA: Composite unique key and FK to match parent table composite key
 'CREATE TABLE `se_payment_details` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `invoice_date` date NOT NULL, // AIDTIV
   `invoice_number` varchar(50) NOT NULL, // AIINV
   `check_number` varchar(50) NOT NULL, //AICHQ
+  `vendor_number` varchar(20) NOT NULL, //AINUM
   `store_name` varchar(255) NOT NULL, //STRNAM
   `total_net` decimal(18,2) NOT NULL DEFAULT ''0.00'', //AITONT
   `company_number` varchar(20) NOT NULL, // AICMP
-  `vendor_number` varchar(20) NOT NULL, //AINUM
   `rebate_type` varchar(50) DEFAULT NULL  //REBATP
   `po_number` varchar(50) DEFAULT NULL //AIPO
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  KEY `idx_invoice_number` (`invoice_number`),
-  KEY `idx_check_number` (`check_number`),
+  UNIQUE KEY `uq_invoice_check_vendor` (`invoice_number`, `check_number`, `vendor_number`),
+  KEY `idx_check_vendor` (`check_number`, `vendor_number`),
   KEY `idx_company_number` (`company_number`),
-  KEY `idx_vendor_number` (`vendor_number`),
-  CONSTRAINT `fk_payment_details_header` FOREIGN KEY (`check_number`) REFERENCES `se_payment_headers` (`check_number`) ON DELETE CASCADE ON UPDATE CASCADE
+  KEY `idx_vendor_number` (`vendor_number`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci'
 
 
