@@ -111,6 +111,7 @@ async function insertPaymentHeaders(rows, releasedDate, db = pool) {
   const mysqlDate = formatToMySQLDate(releasedDate);
   console.log(mysqlDate, 'mysqlDate');
 
+  // Use composite unique key (check_number, vendor_number) instead of just check_number
   const sql = `
     INSERT INTO se_payment_headers (
       company_number,
@@ -129,7 +130,9 @@ async function insertPaymentHeaders(rows, releasedDate, db = pool) {
       vendor_name    = VALUES(vendor_name),
       email_address  = VALUES(email_address),
       total_amount   = VALUES(total_amount),
-      release_date   = VALUES(release_date)
+      bank_account   = VALUES(bank_account),
+      release_date   = VALUES(release_date),
+      updated_at     = CURRENT_TIMESTAMP
   `;
 
   const values = rows.map((row) => [
@@ -243,8 +246,49 @@ async function bulkInsertPaymentDetails(detailRows, db = pool) {
 
 async function getPaymentHeaders({ search = "", page = 1, limit = 10 }) {
   const offset = (page - 1) * limit;
+  
+  // Check if email tracking columns exist (backward compatibility)
+  let hasEmailColumns = true;
+  try {
+    await pool.query(`SELECT email_sent FROM se_payment_headers LIMIT 1`);
+  } catch (err) {
+    hasEmailColumns = false;
+    console.log('Note: email_sent columns not yet migrated. Run migration_fix_composite_key.sql');
+  }
+  
   let countSql = `SELECT COUNT(*) AS total FROM se_payment_headers`;
-  let dataSql = `SELECT * FROM se_payment_headers`;
+  let dataSql = hasEmailColumns 
+    ? `SELECT 
+        id,
+        company_number,
+        company_name,
+        vendor_number,
+        vendor_name,
+        email_address,
+        check_number,
+        total_amount,
+        bank_account,
+        release_date,
+        email_sent,
+        email_sent_at,
+        created_at,
+        updated_at
+      FROM se_payment_headers`
+    : `SELECT 
+        id,
+        company_number,
+        company_name,
+        vendor_number,
+        vendor_name,
+        email_address,
+        check_number,
+        total_amount,
+        bank_account,
+        release_date,
+        created_at,
+        updated_at
+      FROM se_payment_headers`;
+      
   const params = [];
 
   if (search) {
@@ -260,6 +304,14 @@ async function getPaymentHeaders({ search = "", page = 1, limit = 10 }) {
 
   const [[{ total }]] = await pool.query(countSql, params);
   const [rows] = await pool.query(dataSql, dataParams);
+  
+  // Add default values for email columns if they don't exist
+  if (!hasEmailColumns) {
+    rows.forEach(row => {
+      row.email_sent = 0;
+      row.email_sent_at = null;
+    });
+  }
 
   return { rows, total };
 }
